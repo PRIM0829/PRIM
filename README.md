@@ -74,4 +74,9 @@ model = PRISM(pcra_confidence='hard', pcra_smoother='fixed', pcra_fixed_sigma=3.
 - numpy, opencv-python, matplotlib, scipy
 
 ---
+## Data Availability
 
+The datasets used in this work is not included in this repository. 
+It will be publicly upon acceptance 
+and publication of this paper. The repository provides the full model implementation, 
+training/evaluation code, and physics metrics to ensure reproducibility.
