@@ -6,16 +6,6 @@ This repository provides the official implementation of:
 
 ---
 
-> **Review release note.** This repository presents the complete architecture
-> structure, pipeline wiring, loss formulation, and evaluation metrics of
-> PRISM, together with the full algorithmic derivation in the manuscript.
-> Module interfaces and module-level wiring are fully executable; the
-> detailed internal operators of the three A2N-unrolled modules (PCRA's
-> SPCE/FSRI kernel smoothing, IDTPD's descriptor/graph construction, and
-> VDR's multi-scale pyramid) are described in the manuscript and will be
-> made fully available upon acceptance.
-
----
 
 ## Overview
 
@@ -29,83 +19,6 @@ Existing approaches treat these as independent preprocessing stages, severing th
 
 ---
 
-## Core Components
-
-### 1️⃣ PCRA — Physics-Constrained Radiometric Alignment
-
-**Physical subproblem**: the atmospheric radiative transfer equation (RTE), unrolled into a differentiable PIF (pseudo-invariant feature) alignment operator.
-
-| Component | Role |
-|---|---|
-| **SPCE** (Soft PIF Confidence Estimator) | Learns a soft confidence map $w(\mathbf{x})$ from $[F_1, F_2, |F_1-F_2|]$, replacing the non-differentiable hard threshold $\tau$ of classical PIF |
-| **FSRI** (Feature-Space Radiometric Inversion) | Weighted least-squares gain $\hat{\mathbf{a}}_c$ + Nadaraya–Watson smoother for offset $\hat{\mathbf{b}}_c(\mathbf{x})$; correction $F_1^{corr} = \hat{\mathbf{a}}\odot F_1 + \hat{\mathbf{b}}$ |
-| **RMDC** | Dilated residual convolution compensating cross-resolution receptive-field mismatch (dilation matches the physical sensor ratio) |
-
-Key design choice: the NW smoother bandwidth $\hat\sigma$ is **specified, not learned** — gradient-based learning converges to a suboptimal local minimum (Sec. 4.3.1).
-
-### 2️⃣ IDTPD — Image-Derived Terrain Proxy Decoupling
-
-**Physical subproblem**: terrain-illumination confounding (Minnaert/shadow models), solved DEM-free.
-
-| Component | Role |
-|---|---|
-| **ITPDC** | Builds the 5-dim terrain proxy $\mathbf{D}(\mathbf{x}) = [S, A, \cos\Theta, \sin\Theta, H]$ (shadow probability, gradient anisotropy, dominant orientation, texture heterogeneity) directly from the post-event image |
-| **TAGC** | SLIC superpixels + k-NN affinity graph $\mathbf{W}$ over descriptor space |
-| **DRGCD** | Two-layer GCN with a split head routes terrain and change information into orthogonal subspaces: $F_{ter} \perp F_{chg}$ |
-
-### 3️⃣ VDR — Variational Decision Refinement
-
-**Physical subproblem**: differentiable replacement of non-differentiable CRF post-processing.
-
-| Component | Role |
-|---|---|
-| **Feature-flow alignment** | Correlation estimator predicts a dense displacement field $\varphi$; $F_2$ is warped onto $F_1$'s grid with a terrain-adaptive smoothness regularizer |
-| **DEF** (Decision Entropy Functional) | $\mathcal{E}(\mathbf{M}) = -\sum [M\log M + (1-M)\log(1-M)]$ drives the probability map toward binary decisiveness |
-| **EGDR** (Edge-Guided Geometric Divergence Regularizer) | $\mathcal{R}_{geo}(\mathbf{M}) = \sum e^{-\mu\|\nabla I_2\|}\|\nabla \mathbf{M}\|$ aligns change boundaries with post-event image contours |
-
----
-
-## Architecture
-
-```
-Input A (Pre-disaster, LR)                         Input B (Post-disaster, HR)
-    │                                                       │
-    ├──[Degradation Simulator]──→ I_A^simulated              │
-    │         (random affine + downsampling)                 │
-    └───────────────────────────────┬───────────────────────┘
-                                    ▼
-                          [Dual ResNet-18 Encoder]
-                                    │
-                     F1 ────────────┴─────────── F2
-                      │                          │
-                      ▼                          │
-          ┌───[PCRA: SPCE + FSRI]───┐           │
-          │  w(x) ← soft confidence  │           │
-          │  â, b̂ ← weighted LS + NW │           │
-          │  F1_corr = â⊙F1 + b̂      │           │
-          └──────────┬───────────────┘           │
-                     ▼                           │
-          ┌───[IDTPD: ITPDC+TAGC+DRGCD]──┐      │
-          │  D(x) ← terrain descriptor    │      │
-          │  GCN split → F_ter ⟂ F_chg    │      │
-          └──────────┬────────────────────┘      │
-                     │                           │
-                     ▼                           ▼
-          ┌───[VDR: Feature-Flow Alignment]──┐
-          │  φ = CorrEst(F_chg, F2)           │
-          │  F2_aligned = Warp(F2, φ)         │
-          └──────────┬───────────────────────┘
-                     │
-                     ▼
-          ┌───[Difference Decoder]───┐
-          │  P = |F_chg − F2_aligned| │
-          └──────────┬───────────────┘
-                     │
-                     ▼
-          ┌───[VDR: DEF + EGDR]───┐
-          │  M ← refined probability│
-          └────────────────────────┘
-```
 
 ---
 
@@ -160,30 +73,6 @@ release_prism/
 
 ---
 
-## Usage
-
-```python
-import torch
-from models import PRISM
-
-model = PRISM(feature_dim=256, n_class=2)   # PCRA(fixed σ̂=3) + IDTPD + VDR
-I_A = torch.randn(1, 3, 256, 256)           # pre-event (low resolution)
-I_B = torch.randn(1, 3, 256, 256)           # post-event (high resolution)
-
-out = model(I_A, I_B)
-pred = out['pred']          # change logits [1, 2, H, W]
-M    = out['M']             # refined probability map [1, 1, H, W]
-```
-
-### Ablation switches
-
-```python
-model = PRISM(pcra_confidence='hard', pcra_smoother='fixed', pcra_fixed_sigma=3.0,
-              idtpd_descriptors='full', idtpd_graph_type='knn_spatial',
-              vdr_mu=1.0, ablation='no_pcra,no_idtpd')   # module bypass
-```
-
----
 
 ## Requirements
 
@@ -225,12 +114,9 @@ between the pre- and post-event acquisitions.
 +  
 +  ![Scene B: Pre-disaster / Post-disaster / Manual reference](figs/pengshui_caseB.png)
 +  
-+  ![Scene B with PRISM: Pre-disaster / Post-disaster / PRISM / Manual reference](figs/pengshui_caseB_prism.png)
++  ![Scene B with PRISM: Pre-disaster / Post-disaster / methods](figs/pengshui_methods.png)
 
-PRISM preserves the topological integrity of the landslide bodies and
-delineates accurate boundaries, while the comparison methods produce
-fragmented detections with severe terrain-shadow false positives
-(quantitative results in the manuscript, Table tab:comparison_pengshui).
+
 
 ---
 
