@@ -9,7 +9,7 @@ This repository provides the official implementation of:
 
 ## Overview
 
-Cross-sensor heterogeneous change detection faces a **triple coupling problem**:
+Cross-sensor heterogeneous change detection faces a **triple coupling problem*:
 
 1. **Radiometric inconsistency**: cross-epoch atmospheric and transmittance drift shifts the apparent brightness of unchanged surfaces.
 2. **Terrain-induced confounding**: mountain shadows and slope-aspect illumination variation fabricate false alarms indistinguishable from genuine change in feature space.
